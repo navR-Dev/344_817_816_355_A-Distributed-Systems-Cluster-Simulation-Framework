@@ -1,4 +1,5 @@
-{% extends "base.html" %} {% block content %}
+{% extends "base.html" %}
+{% block content %}
 <div class="row">
   <div class="col-md-8">
     <div class="card">
@@ -22,6 +23,7 @@
       </div>
     </div>
   </div>
+
   <div class="col-md-4">
     <div class="card">
       <div class="card-header">
@@ -57,17 +59,19 @@
                 <th>Available</th>
                 <th>Pods</th>
                 <th>Last Heartbeat</th>
+                <th>Actions</th>
               </tr>
             </thead>
             <tbody id="nodeTableBody">
               {% for node_id, node in nodes.items() %}
-              <tr>
+              <tr data-node-id="{{ node_id }}">
                 <td>{{ node_id[:8] }}...</td>
                 <td><span class="badge bg-{{ 'success' if node.status == 'healthy' else 'danger' }}">{{ node.status }}</span></td>
                 <td>{{ node.cpu }}</td>
                 <td>{{ node.available_cpu }}</td>
                 <td>{{ node.pods|length }}</td>
                 <td>{{ node.last_heartbeat|round(2) }}</td>
+                <td><button class="btn btn-danger btn-sm delete-node-btn">Delete</button></td>
               </tr>
               {% endfor %}
             </tbody>
@@ -77,4 +81,7 @@
     </div>
   </div>
 </div>
+
+<!-- External JS -->
+<script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
 {% endblock %}

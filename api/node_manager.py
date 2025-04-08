@@ -25,7 +25,6 @@ class NodeManager:
         """Remove a node from the cluster"""
         if node_id in self.nodes:
             del self.nodes[node_id]
-            logger.info(f"Unregistered node {node_id}")
 
     def get_nodes(self):
         return self.nodes
