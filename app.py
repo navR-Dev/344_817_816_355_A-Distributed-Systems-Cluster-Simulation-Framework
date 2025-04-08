@@ -51,8 +51,11 @@ def nodes_api():
             return jsonify({"error": "CPU cores must be positive"}), 400
 
         container_id = launch_node_container(cpu_cores)
+        print(container_id)
+
         if not container_id:
             container_id = f"simulated_node_{int(time.time())}"
+            print("Docker not available using simulated node")
             logger.warning("Docker not available - using simulated node")
 
         node_manager.register_node(container_id, cpu_cores)
@@ -88,6 +91,30 @@ def cluster_stats():
         "total_pods": sum(len(n["pods"]) for n in nodes.values()),
     }
     return jsonify(stats)
+
+
+# delete nodes
+
+
+@app.route("/api/nodes/<node_id>", methods=["DELETE"])
+def delete_node(node_id):
+    """Delete or stop a node by its ID"""
+    if not node_manager.node_exists(node_id):
+        return jsonify({"error": "Node not found"}), 404
+
+    # Optionally stop Docker container (if running with Docker)
+    try:
+        from api.docker_utils import stop_node_container
+
+        stop_node_container(node_id)
+    except Exception as e:
+        logger.warning(f"Could not stop Docker container {node_id}: {e}")
+
+    # Remove from node manager
+    node_manager.unregister_node(node_id)
+
+    socketio.emit("node_update", node_manager.get_nodes())
+    return jsonify({"status": "success", "message": f"Node {node_id} deleted"}), 200
 
 
 # Background tasks
