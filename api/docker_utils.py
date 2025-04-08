@@ -3,6 +3,7 @@ import time
 
 docker_client = docker.from_env()
 
+
 def launch_node_container(cpu_cores):
     try:
         container = docker_client.containers.run(
@@ -11,8 +12,8 @@ def launch_node_container(cpu_cores):
             detach=True,
             name=f"node_{int(time.time())}",
             cpu_period=100000,
-            cpu_quota=cpu_cores*100000,
-            mem_limit='512m'  # Limit memory for simulation
+            cpu_quota=cpu_cores * 100000,
+            mem_limit="512m",  # Limit memory for simulation
         )
         return container.id
     except Exception as e:
