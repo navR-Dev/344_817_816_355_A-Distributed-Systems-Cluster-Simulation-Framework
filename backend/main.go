@@ -49,7 +49,7 @@ func main() {
 		AllowCredentials: true,
 	}))
 
-	// Docker client setup
+	// Docker client setupadd it to my previous golang code
 	ctx := context.Background()
 	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
 	if err != nil {
@@ -60,6 +60,11 @@ func main() {
 	// Get all nodes
 	r.GET("/api/nodes", func(c *gin.Context) {
 		c.JSON(http.StatusOK, nodes)
+	})
+
+	// Get all pods
+	r.GET("/api/pods", func(c *gin.Context) {
+		c.JSON(http.StatusOK, pods)
 	})
 
 	// Register a new node and launch a container
@@ -147,7 +152,8 @@ func main() {
 			return
 		}
 
-		// Pod Scheduling
+		// Created pod scheduling with First-fit
+
 		var selectedNode *Node
 		for _, node := range nodes {
 			if node.Status == "Running" && node.AvailableCPU >= req.CPU {
