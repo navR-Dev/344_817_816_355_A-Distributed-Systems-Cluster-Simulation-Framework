@@ -119,30 +119,7 @@ func main() {
 		c.JSON(http.StatusOK, node)
 	})
 
-	// Delete a node and stop its container
-	r.DELETE("/api/nodes/:id", func(c *gin.Context) {
-		id := c.Param("id")
-		if node, exists := nodes[id]; exists {
-			// Stop and remove the container (simulate "node" removal)
-			noWaitTimeout := 0
-			if err := cli.ContainerStop(ctx, node.Pods[0], containertypes.StopOptions{Timeout: &noWaitTimeout}); err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to stop container"})
-				return
-			}
-
-			if err := cli.ContainerRemove(ctx, node.Pods[0], container.RemoveOptions{}); err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to remove container"})
-				return
-			}
-
-			delete(nodes, id)
-			c.JSON(http.StatusOK, gin.H{"message": "Node deleted", "node": node})
-		} else {
-			c.JSON(http.StatusNotFound, gin.H{"error": "Node not found"})
-		}
-	})
-
-	// Create Pod
+	// Create pods
 	r.POST("/api/pods", func(c *gin.Context) {
 
 		var req struct {
@@ -187,10 +164,33 @@ func main() {
 		c.JSON(http.StatusOK, pod)
 	})
 
-	// Heartbeat update (Health check)
+	// Delete a node and stop its container
+	r.DELETE("/api/nodes/:id", func(c *gin.Context) {
+		id := c.Param("id")
+		if node, exists := nodes[id]; exists {
+			// Stop and remove the container (simulate "node" removal)
+			noWaitTimeout := 0
+			if err := cli.ContainerStop(ctx, node.Pods[0], containertypes.StopOptions{Timeout: &noWaitTimeout}); err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to stop container"})
+				return
+			}
+
+			if err := cli.ContainerRemove(ctx, node.Pods[0], container.RemoveOptions{}); err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to remove container"})
+				return
+			}
+
+			delete(nodes, id)
+			c.JSON(http.StatusOK, gin.H{"message": "Node deleted", "node": node})
+		} else {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Node not found"})
+		}
+	})
+
+	// Health monitor code
 	go func() {
 		for {
-			time.Sleep(10 * time.Second)
+			time.Sleep(1 * time.Second)
 			now := time.Now()
 
 			// Log current status of nodes and pods
@@ -221,22 +221,51 @@ func main() {
 			}
 
 			for id, node := range nodes {
-				if len(node.Pods) == 0 {
-					continue
-				}
+
+				// if len(node.Pods) == 0 {
+				// 	fmt.Println(node.Pods)
+				// 	continue
+				//  }
+
 				containerID := node.Pods[0]
 
 				// Inspect the container to get its current state
 				inspect, err := cli.ContainerInspect(ctx, containerID)
 				if err != nil || !inspect.State.Running {
+
 					node.Status = "Unhealthy"
+
+					// Mark all pods as offline
+					for _, podID := range node.Pods {
+						if pod, exists := pods[podID]; exists {
+							pod.Status = "Offline"
+							// Try to reschedule
+							pod.NodeID = ""
+							for _, altNode := range nodes {
+								if altNode.ID != node.ID && altNode.Status == "Running" && altNode.AvailableCPU >= pod.CPU {
+									pod.NodeID = altNode.ID
+									pod.Status = "Running"
+									altNode.Pods = append(altNode.Pods, podID)
+									altNode.AvailableCPU -= pod.CPU
+									nodes[altNode.ID] = altNode
+									break
+								}
+							}
+							pods[podID] = pod
+						}
+					}
+
+					// Clear pods from the unhealthy node
+
+					// node.Pods = []string{}
+					node.AvailableCPU = node.CPU
 				} else {
 					node.Status = "Running"
 				}
 
 				node.LastHeartbeat = now.Sub(node.LastUpdateTime).Seconds()
 				node.LastUpdateTime = now
-				nodes[id] = node // update the node
+				nodes[id] = node
 			}
 		}
 	}()
