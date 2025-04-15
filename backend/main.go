@@ -126,14 +126,29 @@ func main() {
 	})
 
 	// Optional: Heartbeat update
+	// Optional: Heartbeat update with health check
 	go func() {
 		for {
-			time.Sleep(3 * time.Second)
+			time.Sleep(5 * time.Second)
 			now := time.Now()
+
 			for id, node := range nodes {
+				if len(node.Pods) == 0 {
+					continue
+				}
+				containerID := node.Pods[0]
+
+				// Inspect the container to get its current state
+				inspect, err := cli.ContainerInspect(ctx, containerID)
+				if err != nil || !inspect.State.Running {
+					node.Status = "Unhealthy"
+				} else {
+					node.Status = "Running"
+				}
+
 				node.LastHeartbeat = now.Sub(node.LastUpdateTime).Seconds()
 				node.LastUpdateTime = now
-				nodes[id] = node // Update the node in the map
+				nodes[id] = node // update the node
 			}
 		}
 	}()
