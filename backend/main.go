@@ -144,10 +144,11 @@ func main() {
 
 	// Create Pod
 	r.POST("/api/pods", func(c *gin.Context) {
+
 		var req struct {
-			CPU int `json:"cpu"`
+			CPUCores int `json:"cpu_cores"`
 		}
-		if err := c.ShouldBindJSON(&req); err != nil || req.CPU <= 0 {
+		if err := c.ShouldBindJSON(&req); err != nil || req.CPUCores <= 0 {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid CPU request"})
 			return
 		}
@@ -156,7 +157,7 @@ func main() {
 
 		var selectedNode *Node
 		for _, node := range nodes {
-			if node.Status == "Running" && node.AvailableCPU >= req.CPU {
+			if node.Status == "Running" && node.AvailableCPU >= req.CPUCores {
 				selectedNode = node
 				break
 			}
@@ -171,14 +172,14 @@ func main() {
 		podID := uuid.New().String()
 		pod := &Pod{
 			ID:     podID,
-			CPU:    req.CPU,
+			CPU:    req.CPUCores,
 			NodeID: selectedNode.ID,
 			Status: "Running",
 		}
 
 		// Add pod to selected node
 		selectedNode.Pods = append(selectedNode.Pods, podID)
-		selectedNode.AvailableCPU -= req.CPU
+		selectedNode.AvailableCPU -= req.CPUCores
 
 		// Store pod in global map
 		pods[podID] = pod
