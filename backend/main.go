@@ -26,10 +26,21 @@ type Node struct {
 	LastUpdateTime time.Time `json:"-"`
 }
 
-var nodes = make(map[string]*Node)
+type Pod struct {
+	ID     string `json:"id"`
+	CPU    int    `json:"cpu"`
+	NodeID string `json:"node_id"`
+	Status string `json:"status"`
+}
+
+var (
+	nodes = make(map[string]*Node)
+	pods  = make(map[string]*Pod)
+)
 
 func main() {
 	r := gin.Default()
+
 	// Enable CORS for frontend interaction
 	r.Use(cors.New(cors.Config{
 		AllowOrigins:     []string{"http://localhost:3000"}, // or "*" if you're testing
@@ -60,6 +71,7 @@ func main() {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid input"})
 			return
 		}
+
 		id := uuid.New().String()
 		now := time.Now()
 
@@ -125,12 +137,81 @@ func main() {
 		}
 	})
 
-	// Optional: Heartbeat update
-	// Optional: Heartbeat update with health check
+	// Create Pod
+	r.POST("/api/pods", func(c *gin.Context) {
+		var req struct {
+			CPU int `json:"cpu"`
+		}
+		if err := c.ShouldBindJSON(&req); err != nil || req.CPU <= 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid CPU request"})
+			return
+		}
+
+		// Pod Scheduling
+		var selectedNode *Node
+		for _, node := range nodes {
+			if node.Status == "Running" && node.AvailableCPU >= req.CPU {
+				selectedNode = node
+				break
+			}
+		}
+
+		if selectedNode == nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "No available node"})
+			return
+		}
+
+		// Allocate resources to pod
+		podID := uuid.New().String()
+		pod := &Pod{
+			ID:     podID,
+			CPU:    req.CPU,
+			NodeID: selectedNode.ID,
+			Status: "Running",
+		}
+
+		// Add pod to selected node
+		selectedNode.Pods = append(selectedNode.Pods, podID)
+		selectedNode.AvailableCPU -= req.CPU
+
+		// Store pod in global map
+		pods[podID] = pod
+
+		c.JSON(http.StatusOK, pod)
+	})
+
+	// Heartbeat update (Health check)
 	go func() {
 		for {
-			time.Sleep(5 * time.Second)
+			time.Sleep(10 * time.Second)
 			now := time.Now()
+
+			// Log current status of nodes and pods
+			fmt.Println("----- Nodes -----")
+			for id, node := range nodes {
+				fmt.Printf("Node ID: %s\n", id)
+				fmt.Printf("Status: %s\n", node.Status)
+				fmt.Printf("CPU: %d\n", node.CPU)
+				fmt.Printf("Available CPU: %d\n", node.AvailableCPU)
+				fmt.Printf("Last Heartbeat: %.2f seconds ago\n", node.LastHeartbeat)
+				fmt.Println("Pods:")
+				for _, podID := range node.Pods {
+					pod, exists := pods[podID]
+					if exists {
+						fmt.Printf("  Pod ID: %s, Status: %s, CPU: %d\n", pod.ID, pod.Status, pod.CPU)
+					}
+				}
+				fmt.Println("---------------")
+			}
+
+			fmt.Println("----- Pods -----")
+			for _, pod := range pods {
+				fmt.Printf("Pod ID: %s\n", pod.ID)
+				fmt.Printf("Status: %s\n", pod.Status)
+				fmt.Printf("CPU: %d\n", pod.CPU)
+				fmt.Printf("Node ID: %s\n", pod.NodeID)
+				fmt.Println("---------------")
+			}
 
 			for id, node := range nodes {
 				if len(node.Pods) == 0 {
