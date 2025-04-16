@@ -1,18 +1,21 @@
 package main
 
 import (
-	"context"
-	"fmt"
 	"github.com/docker/docker/api/types/container"
 	containertypes "github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/client"
+
+	"context"
+	"fmt"
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"io"
+	"math/rand"
 	"net/http"
 	"os"
+	"strconv"
 	"time"
 )
 
@@ -89,11 +92,18 @@ func main() {
 		defer reader.Close()
 		io.Copy(os.Stdout, reader) // Log output of the image pull
 
+		// creating unique container name
+		source := rand.NewSource(time.Now().UnixNano())
+		r := rand.New(source)
+		num := r.Intn(900) + 100
+		numStr := strconv.Itoa(num)
+		container_name := "cont" + numStr
+
 		// Create the container
 		resp, err := cli.ContainerCreate(ctx, &container.Config{
 			Image: "alpine",
 			Cmd:   []string{"tail", "-f", "/dev/null"},
-		}, nil, nil, nil, "")
+		}, nil, nil, nil, container_name)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create container"})
 			return
