@@ -80,7 +80,7 @@ func main() {
 			return
 		}
 
-		id := uuid.New().String()
+		// id := uuid.New().String()
 		now := time.Now()
 
 		// Pull the Docker image (Alpine in this case)
@@ -97,9 +97,9 @@ func main() {
 		r := rand.New(source)
 		num := r.Intn(900) + 100
 		numStr := strconv.Itoa(num)
-		container_name := "cont" + numStr
+		container_name := "con" + numStr
 
-		// Create the container
+		// creating the container
 		resp, err := cli.ContainerCreate(ctx, &container.Config{
 			Image: "alpine",
 			Cmd:   []string{"tail", "-f", "/dev/null"},
@@ -108,8 +108,10 @@ func main() {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create container"})
 			return
 		}
+		// println("This should be the container ID mostly -------------------------")
+		// println(resp.ID)
 
-		// Start the container
+		// starting the container
 		if err := cli.ContainerStart(ctx, resp.ID, container.StartOptions{}); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to start container"})
 			return
@@ -117,14 +119,17 @@ func main() {
 
 		// Store node data
 		node := &Node{
-			ID:             id,
+			//Instead of random id for node making it container id
+			// ID:             id,
+			ID:             resp.ID,
 			Status:         "Running",
 			CPU:            body.CPUCores,
 			AvailableCPU:   body.CPUCores,
 			Pods:           []string{resp.ID}, // Track container ID as a "pod"
 			LastUpdateTime: now,
 		}
-		nodes[id] = node
+		// nodes[id] = node
+		nodes[resp.ID] = node
 
 		c.JSON(http.StatusOK, node)
 	})
@@ -141,7 +146,6 @@ func main() {
 		}
 
 		// Created pod scheduling with First-fit
-
 		var selectedNode *Node
 		for _, node := range nodes {
 			if node.Status == "Running" && node.AvailableCPU >= req.CPUCores {
@@ -180,12 +184,12 @@ func main() {
 		if node, exists := nodes[id]; exists {
 			// Stop and remove the container (simulate "node" removal)
 			noWaitTimeout := 0
-			if err := cli.ContainerStop(ctx, node.Pods[0], containertypes.StopOptions{Timeout: &noWaitTimeout}); err != nil {
+			if err := cli.ContainerStop(ctx, node.ID, containertypes.StopOptions{Timeout: &noWaitTimeout}); err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to stop container"})
 				return
 			}
 
-			if err := cli.ContainerRemove(ctx, node.Pods[0], container.RemoveOptions{}); err != nil {
+			if err := cli.ContainerRemove(ctx, node.ID, container.RemoveOptions{}); err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to remove container"})
 				return
 			}
@@ -237,7 +241,8 @@ func main() {
 				// 	continue
 				//  }
 
-				containerID := node.Pods[0]
+				// containerID := node.Pods[0]
+				containerID := node.ID
 
 				// Inspect the container to get its current state
 				inspect, err := cli.ContainerInspect(ctx, containerID)
@@ -267,7 +272,7 @@ func main() {
 
 					// Clear pods from the unhealthy node
 
-					// node.Pods = []string{}
+					node.Pods = []string{}
 					node.AvailableCPU = node.CPU
 				} else {
 					node.Status = "Running"
