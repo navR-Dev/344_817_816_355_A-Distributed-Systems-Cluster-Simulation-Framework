@@ -41,6 +41,71 @@ var (
 	pods  = make(map[string]*Pod)
 )
 
+func logClusterStatus() {
+	fmt.Println("----- Nodes -----")
+	for id, node := range nodes {
+		fmt.Printf("Node ID: %s\n", id)
+		fmt.Printf("Status: %s\n", node.Status)
+		fmt.Printf("CPU: %d\n", node.CPU)
+		fmt.Printf("Available CPU: %d\n", node.AvailableCPU)
+		fmt.Printf("Last Heartbeat: %.2f seconds ago\n", node.LastHeartbeat)
+		fmt.Println("Pods:")
+		for _, podID := range node.Pods {
+			if pod, exists := pods[podID]; exists {
+				fmt.Printf("  Pod ID: %s, Status: %s, CPU: %d\n", pod.ID, pod.Status, pod.CPU)
+			}
+		}
+		fmt.Println("---------------")
+	}
+
+	fmt.Println("----- Pods -----")
+	for _, pod := range pods {
+		fmt.Printf("Pod ID: %s\n", pod.ID)
+		fmt.Printf("Status: %s\n", pod.Status)
+		fmt.Printf("CPU: %d\n", pod.CPU)
+		fmt.Printf("Node ID: %s\n", pod.NodeID)
+		fmt.Println("---------------")
+	}
+}
+
+func heartbeat(ctx context.Context, cli *client.Client, now time.Time) {
+	for id, node := range nodes {
+		containerID := node.ID // or use node.Pods[0] if you want to inspect pod containers
+
+		inspect, err := cli.ContainerInspect(ctx, containerID)
+		if err != nil || !inspect.State.Running {
+			node.Status = "Unhealthy"
+
+			for _, podID := range node.Pods {
+				if pod, exists := pods[podID]; exists {
+					pod.Status = "Offline"
+					pod.NodeID = ""
+
+					for _, altNode := range nodes {
+						if altNode.ID != node.ID && altNode.Status == "Running" && altNode.AvailableCPU >= pod.CPU {
+							pod.NodeID = altNode.ID
+							pod.Status = "Running"
+							altNode.Pods = append(altNode.Pods, podID)
+							altNode.AvailableCPU -= pod.CPU
+							nodes[altNode.ID] = altNode
+							break
+						}
+					}
+					pods[podID] = pod
+				}
+			}
+			node.Pods = []string{}
+			node.AvailableCPU = node.CPU
+		} else {
+			node.Status = "Running"
+		}
+
+		node.LastHeartbeat = now.Sub(node.LastUpdateTime).Seconds()
+		node.LastUpdateTime = now
+		nodes[id] = node
+	}
+}
+
 func main() {
 	r := gin.Default()
 
@@ -282,6 +347,16 @@ func main() {
 				node.LastUpdateTime = now
 				nodes[id] = node
 			}
+		}
+	}()
+
+	go func() {
+		for {
+			time.Sleep(1 * time.Second)
+			now := time.Now()
+
+			logClusterStatus()
+			heartbeat(ctx, cli, now)
 		}
 	}()
 
