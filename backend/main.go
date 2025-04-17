@@ -41,6 +41,24 @@ var (
 	pods  = make(map[string]*Pod)
 )
 
+func rescheduleOfflinePods() {
+	for podID, pod := range pods {
+		if pod.Status == "Offline" && pod.NodeID == "" {
+			for _, node := range nodes {
+				if node.Status == "Running" && node.AvailableCPU >= pod.CPU {
+					pod.NodeID = node.ID
+					pod.Status = "Running"
+					node.Pods = append(node.Pods, podID)
+					node.AvailableCPU -= pod.CPU
+					nodes[node.ID] = node
+					break
+				}
+			}
+			pods[podID] = pod
+		}
+	}
+}
+
 func logClusterStatus() {
 	fmt.Println("----- Nodes -----")
 	for id, node := range nodes {
@@ -70,8 +88,9 @@ func logClusterStatus() {
 
 func heartbeat(ctx context.Context, cli *client.Client, now time.Time) {
 	for id, node := range nodes {
-		containerID := node.ID // or use node.Pods[0] if you want to inspect pod containers
+		containerID := node.ID
 
+		// inspecting pod containers
 		inspect, err := cli.ContainerInspect(ctx, containerID)
 		if err != nil || !inspect.State.Running {
 			node.Status = "Unhealthy"
@@ -80,17 +99,6 @@ func heartbeat(ctx context.Context, cli *client.Client, now time.Time) {
 				if pod, exists := pods[podID]; exists {
 					pod.Status = "Offline"
 					pod.NodeID = ""
-
-					for _, altNode := range nodes {
-						if altNode.ID != node.ID && altNode.Status == "Running" && altNode.AvailableCPU >= pod.CPU {
-							pod.NodeID = altNode.ID
-							pod.Status = "Running"
-							altNode.Pods = append(altNode.Pods, podID)
-							altNode.AvailableCPU -= pod.CPU
-							nodes[altNode.ID] = altNode
-							break
-						}
-					}
 					pods[podID] = pod
 				}
 			}
@@ -104,6 +112,7 @@ func heartbeat(ctx context.Context, cli *client.Client, now time.Time) {
 		node.LastUpdateTime = now
 		nodes[id] = node
 	}
+	rescheduleOfflinePods()
 }
 
 func main() {
@@ -154,6 +163,7 @@ func main() {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to pull image"})
 			return
 		}
+
 		defer reader.Close()
 		io.Copy(os.Stdout, reader) // Log output of the image pull
 
@@ -247,7 +257,6 @@ func main() {
 	r.DELETE("/api/nodes/:id", func(c *gin.Context) {
 		id := c.Param("id")
 		if node, exists := nodes[id]; exists {
-			// Stop and remove the container (simulate "node" removal)
 			noWaitTimeout := 0
 			if err := cli.ContainerStop(ctx, node.ID, containertypes.StopOptions{Timeout: &noWaitTimeout}); err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to stop container"})
@@ -259,7 +268,20 @@ func main() {
 				return
 			}
 
+			// Mark pods as offline and unassign
+			for _, podID := range node.Pods {
+				if pod, exists := pods[podID]; exists {
+					pod.Status = "Offline"
+					pod.NodeID = ""
+					pods[podID] = pod
+				}
+			}
+
 			delete(nodes, id)
+
+			// ✅ Try to reassign offline pods
+			rescheduleOfflinePods()
+
 			c.JSON(http.StatusOK, gin.H{"message": "Node deleted", "node": node})
 		} else {
 			c.JSON(http.StatusNotFound, gin.H{"error": "Node not found"})
