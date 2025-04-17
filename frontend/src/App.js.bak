@@ -1,0 +1,117 @@
+// src/App.jsx
+import React, { useState, useEffect } from "react";
+import axios from "axios";
+import ReactFlow from "react-flow-renderer";
+import "./App.css";
+
+const API_URL = "http://localhost:5000/api";
+
+function App() {
+  const [nodes, setNodes] = useState([]);
+  const [pods, setPods] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  // Fetch data from API
+  const fetchData = async () => {
+    try {
+      setLoading(true);
+      const [nodesResponse, podsResponse] = await Promise.all([
+        axios.get(`${API_URL}/nodes`),
+        axios.get(`${API_URL}/pods`),
+      ]);
+
+      setNodes(Object.values(nodesResponse.data));
+      setPods(Object.values(podsResponse.data));
+      setLoading(false);
+    } catch (err) {
+      setError("Failed to fetch data");
+      setLoading(false);
+      console.error(err);
+    }
+  };
+
+  // Initial data load
+  useEffect(() => {
+    fetchData();
+    // Set up polling for updates
+    const interval = setInterval(fetchData, 5000);
+    return () => clearInterval(interval);
+  }, []);
+
+  if (loading && nodes.length === 0) {
+    return <div className="loading">Loading cluster data...</div>;
+  }
+
+  // Prepare data for React Flow (basic example)
+  const reactFlowNodes = [
+    ...nodes.map((node) => ({
+      id: node.id,
+      type: "default", // you can customize node types here
+      data: { label: `Node: ${node.id.substring(0, 7)}...` },
+      position: { x: Math.random() * 600, y: Math.random() * 400 },
+      style: {
+        backgroundColor: node.status === "Running" ? "#4CAF50" : "#F44336",
+      },
+    })),
+
+    ...pods.map((pod) => ({
+      id: pod.id,
+      type: "circle",
+      data: { label: `Pod: ${pod.id.substring(0, 7)}...` },
+      position: { x: Math.random() * 600, y: Math.random() * 400 },
+      style: {
+        backgroundColor: pod.status === "Running" ? "#2196F3" : "#FFC107",
+      },
+    })),
+  ];
+
+  const reactFlowEdges = pods
+    .filter((pod) => pod.node_id) // Only pods assigned to nodes
+    .map((pod) => ({
+      id: `e${pod.node_id}-${pod.id}`,
+      source: pod.node_id,
+      target: pod.id,
+      animated: true,
+      style: { stroke: "blue", strokeWidth: 2 },
+    }));
+
+  return (
+    <div className="app">
+      <header>
+        <h1>Kubernetes-like Cluster Visualization</h1>
+      </header>
+
+      <div className="graph-container">
+        <h3>Cluster Nodes and Pods</h3>
+        <div style={{ height: "500px", border: "1px solid #ddd" }}>
+          <ReactFlow
+            nodes={reactFlowNodes}
+            edges={reactFlowEdges}
+            fitView
+            nodeTypes={{}} // You can add custom node types here
+          />
+        </div>
+      </div>
+
+      <div className="controls">
+        <h3>Controls</h3>
+        {/* You can add more controls for node/pod creation here */}
+      </div>
+
+      {error && <div className="error">{error}</div>}
+
+      <div className="node-list">
+        <h2>Node List</h2>
+        {/* Node List Rendering (your existing logic) */}
+      </div>
+
+      <div className="pod-list">
+        <h2>Pod List</h2>
+        {/* Pod List Rendering (your existing logic) */}
+      </div>
+    </div>
+  );
+}
+
+export default App;
